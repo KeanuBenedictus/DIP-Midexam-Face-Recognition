@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import math
+import time
 
 class FaceDetector:
     def __init__(self):
@@ -217,42 +218,73 @@ class FaceDetector:
                    (10, 85),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         cv2.putText(image, f'Left EAR: {left_eye_ear:.2f}, Right EAR: {right_eye_ear:.2f}', 
-                   (10, 110),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    (10, 110),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
-        return image
+        # --- NEW CODE: Calculate average EAR to send back ---
+        avg_ear = (left_eye_ear + right_eye_ear) / 2.0
+        return image, avg_ear
 
 def main():
-    # Initialize face detector
-    detector = FaceDetector()
+    import winsound  # Import sound library for Windows
     
-    # Initialize video capture
+    detector = FaceDetector()
     cap = cv2.VideoCapture(0)
     
+    # --- CONFIGURATION ---
+    DROWSY_THRESHOLD = 0.43  # Your calibrated sensitivity
+    DROWSY_FRAMES_LIMIT = 10 
+    drowsy_counter = 0      
+    # ---------------------
+
     if not cap.isOpened():
         print("Error: Could not open camera.")
         return
     
-    print("Press 'q' to quit the application")
+    print("Press 'q' to quit")
+    print("Press 's' to save a snapshot")
     
     while True:
         ret, frame = cap.read()
+        if not ret: break
         
-        if not ret:
-            print("Error: Failed to capture frame.")
-            break
+        height, width, _ = frame.shape
+        processed_frame, avg_ear = detector.process_frame(frame)
         
-        # Process the frame
-        processed_frame = detector.process_frame(frame)
-        
-        # Display the result
+        # --- DROWSINESS LOGIC ---
+        if 0 < avg_ear < DROWSY_THRESHOLD:
+            drowsy_counter += 1
+            
+            if drowsy_counter > DROWSY_FRAMES_LIMIT:
+                # 1. PLAY SOUND (Async means it won't freeze the video)
+                # Frequency=1000Hz, Duration=200ms
+                winsound.Beep(1000, 200) 
+
+                # 2. STROBE LIGHT EFFECT
+                if (drowsy_counter % 10) < 5: 
+                    # Flash WHITE
+                    cv2.rectangle(processed_frame, (0,0), (width, height), (255, 255, 255), -1)
+                    cv2.putText(processed_frame, "WAKE UP!", (width//2 - 200, height//2), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 0, 255), 5)
+                else:
+                    # Flash RED
+                    cv2.rectangle(processed_frame, (0,0), (width, height), (0, 0, 255), -1)
+                    cv2.putText(processed_frame, "WAKE UP!", (width//2 - 200, height//2), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 255, 255), 5)
+        else:
+            drowsy_counter = 0
+
         cv2.imshow('Face Detector', processed_frame)
         
-        # Break on 'q' key press
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
             break
+        elif key == ord('s'):
+            timestamp = int(time.time())
+            filename = f"snapshot_{timestamp}.jpg"
+            cv2.imwrite(filename, processed_frame)
+            print(f"Snapshot saved: {filename}")
     
-    # Release resources
     cap.release()
     cv2.destroyAllWindows()
 
