@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import math
 import time
+from datetime import datetime
 
 class FaceDetector:
     def __init__(self):
@@ -37,6 +38,8 @@ class FaceDetector:
         self.is_recording = False
         self.out = None
         self.recording_start_time = None
+        self.recording_start_datetime = None
+        self.recording_end_datetime = None
 
     def detect_face(self, image):
         """Detect faces in the image"""
@@ -257,6 +260,14 @@ def main():
         height, width, _ = frame.shape
         processed_frame, avg_ear = detector.process_frame(frame)
 
+        # --- REAL-TIME CLOCK DISPLAY ---
+        # Get current time and format as DD/MM/YYYY-HH.MM.SS
+        current_time = datetime.now().strftime("%d/%m/%Y-%H.%M.%S")
+        # Display at bottom left of the screen
+        cv2.putText(processed_frame, current_time,
+                   (10, height - 10),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
         # --- DROWSINESS LOGIC ---
         if 0 < avg_ear < DROWSY_THRESHOLD:
             drowsy_counter += 1
@@ -286,6 +297,7 @@ def main():
             if detector.out is None:
                 # Initialize VideoWriter when starting to record
                 fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                # We'll update the filename when recording stops
                 timestamp = int(time.time())
                 filename = f"recorded/recording_{timestamp}.avi"
                 detector.out = cv2.VideoWriter(filename, fourcc, 20.0, (width, height))
@@ -302,10 +314,30 @@ def main():
         else:
             # If not recording but the VideoWriter is still active, release it
             if detector.out is not None:
+                # Store the end datetime
+                detector.recording_end_datetime = datetime.now().strftime("%d%m%Y-%H.%M.%S")
+
+                # Release the current video writer
                 detector.out.release()
+
+                # Get the original filename to rename it
+                original_filename = f"recorded/recording_{int(detector.recording_start_time)}.avi"
+
+                # Create the new filename with start and end datetime
+                new_filename = f"recorded/recording_{detector.recording_start_datetime}-{detector.recording_end_datetime}.avi"
+
+                # Rename the file
+                import os
+                if os.path.exists(original_filename):
+                    os.rename(original_filename, new_filename)
+                    print(f"Recording saved as: {new_filename}")
+                else:
+                    print(f"Recording stopped. Original file not found: {original_filename}")
+
                 detector.out = None
                 detector.recording_start_time = None
-                print("Recording stopped")
+                detector.recording_start_datetime = None
+                detector.recording_end_datetime = None
 
         cv2.imshow('Face Detector', processed_frame)
 
@@ -321,6 +353,8 @@ def main():
             # Toggle recording state
             detector.is_recording = not detector.is_recording
             if detector.is_recording:
+                # Store the start datetime when recording begins
+                detector.recording_start_datetime = datetime.now().strftime("%d%m%Y-%H.%M.%S")
                 print("Recording started...")
             else:
                 print("Recording stopped.")
